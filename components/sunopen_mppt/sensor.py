@@ -26,7 +26,6 @@ from . import (
 
 DEPENDENCIES = ["sunopen_mppt"]
 
-# 关键：在模块级别定义 SunopenMPPTSensor
 SunopenMPPTSensor = sunopen_mppt_ns.class_(
     "SunopenMPPTSensor", SunopenMPPTDevice, cg.Component
 )
