@@ -2,7 +2,6 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import ble_client
 from esphome.const import CONF_ID
-from esphome import automation
 
 DEPENDENCIES = ["ble_client"]
 AUTO_LOAD = ["modbus", "modbus_controller", "sensor", "switch", "number", "text_sensor"]
@@ -14,9 +13,6 @@ SunopenMPPT = sunopen_mppt_ns.class_(
     cg.Component
 )
 
-CONF_SUNOPEN_MPPT_ID = "sunopen_mppt_id"
-
-# 关键：使用 ensure_list 允许列表格式
 CONFIG_SCHEMA = cv.ensure_list(
     cv.Schema({
         cv.GenerateID(): cv.declare_id(SunopenMPPT),
