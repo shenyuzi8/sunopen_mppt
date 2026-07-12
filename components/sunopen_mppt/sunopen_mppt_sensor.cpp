@@ -7,106 +7,129 @@ namespace sunopen_mppt {
 static const char *const TAG = "sunopen_mppt_sensor";
 
 void SunopenMPPTSensor::on_modbus_data(const std::vector<uint8_t> &data) {
-  // data format: [addr(1)][func(1)][byte_count(1)][reg_data(N)][crc_lo(1)][crc_hi(1)]
+  if (data.size() < 5) {
+    ESP_LOGW(TAG, "Data too short: %d bytes", data.size());
+    return;
+  }
   
-  if (data.size() < 5) return;
-  
+  uint8_t addr = data[0];
+  uint8_t func = data[1];
   uint8_t byte_count = data[2];
-  const uint8_t *regs = &data[3];  // 寄存器数据开始位置
   
-  // 第一帧数据：40000~40027 (56 字节寄存器数据)
+  ESP_LOGI(TAG, "Modbus frame: addr=0x%02X, func=0x%02X, byte_count=%d, total_len=%d", 
+           addr, func, byte_count, data.size());
+  
+  if (data.size() > 0) {
+    ESP_LOGI(TAG, "Raw data (first 20 bytes): %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+             data.size() > 0 ? data[0] : 0, data.size() > 1 ? data[1] : 0,
+             data.size() > 2 ? data[2] : 0, data.size() > 3 ? data[3] : 0,
+             data.size() > 4 ? data[4] : 0, data.size() > 5 ? data[5] : 0,
+             data.size() > 6 ? data[6] : 0, data.size() > 7 ? data[7] : 0,
+             data.size() > 8 ? data[8] : 0, data.size() > 9 ? data[9] : 0,
+             data.size() > 10 ? data[10] : 0, data.size() > 11 ? data[11] : 0,
+             data.size() > 12 ? data[12] : 0, data.size() > 13 ? data[13] : 0,
+             data.size() > 14 ? data[14] : 0, data.size() > 15 ? data[15] : 0,
+             data.size() > 16 ? data[16] : 0, data.size() > 17 ? data[17] : 0,
+             data.size() > 18 ? data[18] : 0, data.size() > 19 ? data[19] : 0);
+  }
+  
+  const uint8_t *regs = &data[3];
+  
+  // First frame: registers 0x00-0x1B (0-27), byte_count should be 56
   if (byte_count >= 56) {
-    // 40000: 设备型号
-    // 40001: 软件版本
-    // 40002: 硬件版本
-    // 40003: 最大功率支持
-    // 40004: 输入输出最大电流
-    // 40005: 光伏降压散热器温度 (精度 1℃)
-    if (this->controller_temp_sensor_ != nullptr) {
-      uint16_t val = (regs[10] << 8) | regs[11];
-      this->controller_temp_sensor_->publish_state(val);
-    }
+    ESP_LOGI(TAG, "Processing first frame (regs 0x00-0x1B)");
     
-    // 40014: BUCK 散热器温度 (精度 1℃)
-    // 40020: 光伏输入电压 (精度 0.01V)
+    // 40020: PV voltage (offset 40)
+    uint16_t pv_voltage_raw = (regs[40] << 8) | regs[41];
+    ESP_LOGI(TAG, "PV voltage raw: %d (0x%04X)", pv_voltage_raw, pv_voltage_raw);
     if (this->pv_voltage_sensor_ != nullptr) {
-      uint16_t val = (regs[40] << 8) | regs[41];
-      this->pv_voltage_sensor_->publish_state(val * 0.01f);
+      this->pv_voltage_sensor_->publish_state(pv_voltage_raw * 0.01f);
     }
     
-    // 40021: 光伏输入电流 (精度 0.01A)
+    // 40021: PV current (offset 42)
+    uint16_t pv_current_raw = (regs[42] << 8) | regs[43];
+    ESP_LOGI(TAG, "PV current raw: %d", pv_current_raw);
     if (this->pv_current_sensor_ != nullptr) {
-      uint16_t val = (regs[42] << 8) | regs[43];
-      this->pv_current_sensor_->publish_state(val * 0.01f);
+      this->pv_current_sensor_->publish_state(pv_current_raw * 0.01f);
     }
     
-    // 40022: 光伏输入功率 (精度 1W)
+    // 40022: PV power (offset 44)
+    uint16_t pv_power_raw = (regs[44] << 8) | regs[45];
+    ESP_LOGI(TAG, "PV power raw: %d", pv_power_raw);
     if (this->pv_power_sensor_ != nullptr) {
-      uint16_t val = (regs[44] << 8) | regs[45];
-      this->pv_power_sensor_->publish_state(val);
+      this->pv_power_sensor_->publish_state(pv_power_raw);
     }
     
-    // 40023: 光伏散热器温度 (精度 1℃)
-    if (this->battery_temp_sensor_ != nullptr) {
-      uint16_t val = (regs[46] << 8) | regs[47];
-      this->battery_temp_sensor_->publish_state(val);
-    }
-    
-    // 40025: 电池输出电压 (精度 0.01V)
+    // 40025: Battery voltage (offset 50)
+    uint16_t bat_voltage_raw = (regs[50] << 8) | regs[51];
+    ESP_LOGI(TAG, "Battery voltage raw: %d", bat_voltage_raw);
     if (this->battery_voltage_sensor_ != nullptr) {
-      uint16_t val = (regs[50] << 8) | regs[51];
-      this->battery_voltage_sensor_->publish_state(val * 0.01f);
+      this->battery_voltage_sensor_->publish_state(bat_voltage_raw * 0.01f);
     }
     
-    // 40026: 电池输出电流 (精度 0.01A)
+    // 40026: Battery current (offset 52)
+    uint16_t bat_current_raw = (regs[52] << 8) | regs[53];
+    ESP_LOGI(TAG, "Battery current raw: %d", bat_current_raw);
     if (this->battery_current_sensor_ != nullptr) {
-      uint16_t val = (regs[52] << 8) | regs[53];
-      this->battery_current_sensor_->publish_state(val * 0.01f);
+      this->battery_current_sensor_->publish_state(bat_current_raw * 0.01f);
     }
     
-    // 40027: 电池输出功率 (精度 1W)
+    // 40027: Battery power (offset 54)
+    uint16_t bat_power_raw = (regs[54] << 8) | regs[55];
+    ESP_LOGI(TAG, "Battery power raw: %d", bat_power_raw);
     if (this->battery_power_sensor_ != nullptr) {
-      uint16_t val = (regs[54] << 8) | regs[55];
-      this->battery_power_sensor_->publish_state(val);
+      this->battery_power_sensor_->publish_state(bat_power_raw);
     }
     
-    // 40010: 充电阶段
-    // 40011: 充电状态 (0=未充电, 1=充电中)
+    // 40005: Controller temp (offset 10)
+    uint16_t ctrl_temp_raw = (regs[10] << 8) | regs[11];
+    ESP_LOGI(TAG, "Controller temp raw: %d", ctrl_temp_raw);
+    if (this->controller_temp_sensor_ != nullptr) {
+      this->controller_temp_sensor_->publish_state(ctrl_temp_raw);
+    }
+    
+    // 40011: Charging status (offset 22)
+    uint16_t charge_status_raw = (regs[22] << 8) | regs[23];
+    ESP_LOGI(TAG, "Charge status raw: %d", charge_status_raw);
     if (this->charging_status_sensor_ != nullptr) {
-      uint16_t val = (regs[22] << 8) | regs[23];
-      this->charging_status_sensor_->publish_state(val);
+      this->charging_status_sensor_->publish_state(charge_status_raw);
     }
   }
   
-  // 第二帧数据：40028~40070 (86 字节寄存器数据)
+  // Second frame: registers 0x1C-0x46 (28-70), byte_count should be 86
   if (byte_count >= 86) {
-    // 40028: 电池散热器温度 (精度 1℃)
-    // 40030: 负载输出电流 (精度 0.1A)
+    ESP_LOGI(TAG, "Processing second frame (regs 0x1C-0x46)");
+    
+    // 40030: Load current (offset 60)
+    uint16_t load_current_raw = (regs[60] << 8) | regs[61];
+    ESP_LOGI(TAG, "Load current raw: %d", load_current_raw);
     if (this->load_current_sensor_ != nullptr) {
-      uint16_t val = (regs[60] << 8) | regs[61];
-      this->load_current_sensor_->publish_state(val * 0.1f);
+      this->load_current_sensor_->publish_state(load_current_raw * 0.1f);
     }
     
-    // 40031: 负载输出功率 (精度 1W)
+    // 40031: Load power (offset 62)
+    uint16_t load_power_raw = (regs[62] << 8) | regs[63];
+    ESP_LOGI(TAG, "Load power raw: %d", load_power_raw);
     if (this->load_power_sensor_ != nullptr) {
-      uint16_t val = (regs[62] << 8) | regs[63];
-      this->load_power_sensor_->publish_state(val);
+      this->load_power_sensor_->publish_state(load_power_raw);
     }
     
-    // 40035: 当前 SOC 值 (精度 0.1%)
+    // 40035: SOC (offset 70)
+    uint16_t soc_raw = (regs[70] << 8) | regs[71];
+    ESP_LOGI(TAG, "SOC raw: %d", soc_raw);
     if (this->battery_soc_sensor_ != nullptr) {
-      uint16_t val = (regs[70] << 8) | regs[71];
-      this->battery_soc_sensor_->publish_state(val * 0.1f);
+      this->battery_soc_sensor_->publish_state(soc_raw * 0.1f);
     }
     
-    // 40037: 今日发电量 (精度 1Wh)
+    // 40037: Today energy (offset 74)
+    uint16_t energy_raw = (regs[74] << 8) | regs[75];
+    ESP_LOGI(TAG, "Today energy raw: %d", energy_raw);
     if (this->today_energy_sensor_ != nullptr) {
-      uint16_t val = (regs[74] << 8) | regs[75];
-      this->today_energy_sensor_->publish_state(val);
+      this->today_energy_sensor_->publish_state(energy_raw);
     }
   }
   
-  ESP_LOGD(TAG, "Sensor data updated successfully");
+  ESP_LOGI(TAG, "Sensor update complete");
 }
 
 }  // namespace sunopen_mppt
