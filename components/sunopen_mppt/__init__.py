@@ -9,7 +9,6 @@ AUTO_LOAD = ["sensor", "switch", "number", "text_sensor", "binary_sensor"]
 sunopen_mppt_ns = cg.esphome_ns.namespace("sunopen_mppt")
 SunopenMPPT = sunopen_mppt_ns.class_("SunopenMPPT", ble_client.BLEClientNode, cg.Component)
 SunopenMPPTDevice = sunopen_mppt_ns.class_("SunopenMPPTDevice")
-SunopenMPPTSensor = sunopen_mppt_ns.class_("SunopenMPPTSensor", SunopenMPPTDevice, cg.Component)
 
 CONF_SUNOPEN_MPPT_ID = "sunopen_mppt_id"
 CONF_THROTTLE = "throttle"
