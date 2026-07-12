@@ -9,7 +9,7 @@ namespace sunopen_mppt {
 class SunopenMPPTSensor : public SunopenMPPTDevice, public Component {
  public:
   void on_modbus_data(const std::vector<uint8_t> &data) override;
-  
+
   void set_battery_voltage_sensor(sensor::Sensor *s) { battery_voltage_sensor_ = s; }
   void set_battery_current_sensor(sensor::Sensor *s) { battery_current_sensor_ = s; }
   void set_battery_power_sensor(sensor::Sensor *s) { battery_power_sensor_ = s; }
