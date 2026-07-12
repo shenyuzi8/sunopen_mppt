@@ -1,11 +1,13 @@
 #include "sunopen_mppt.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace sunopen_mppt {
 
 static const char *const TAG = "sunopen_mppt";
 
+// Modbus RTU commands: read holding registers
 static const uint8_t CMD1[] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x1C, 0x84, 0x0F};
 static const uint8_t CMD2[] = {0x01, 0x03, 0x00, 0x1C, 0x00, 0x2B, 0x45, 0x0E};
 
@@ -13,10 +15,28 @@ void SunopenMPPT::setup() {
   ESP_LOGD(TAG, "SunopenMPPT setup complete");
 }
 
+void SunopenMPPT::dump_config() {
+  ESP_LOGCONFIG(TAG, "SunopenMPPT:");
+  ESP_LOGCONFIG(TAG, "  Throttle: %d ms", this->throttle_);
+  ESP_LOGCONFIG(TAG, "  Devices: %d", this->devices_.size());
+}
+
+float SunopenMPPT::get_setup_priority() const {
+  return setup_priority::AFTER_BLUETOOTH;
+}
+
 void SunopenMPPT::loop() {
   if (!this->ready_) return;
 
+  // Modbus RX timeout
   uint32_t now = millis();
+  if (now - this->last_modbus_byte_ > RX_TIMEOUT && !this->rx_buffer_.empty()) {
+    ESP_LOGW(TAG, "RX timeout, clearing buffer");
+    this->rx_buffer_.clear();
+    this->last_modbus_byte_ = now;
+  }
+
+  // Poll data
   if (now - this->last_poll_ >= this->throttle_) {
     this->last_poll_ = now;
     this->poll_data_();
@@ -38,44 +58,25 @@ void SunopenMPPT::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t 
     }
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      // 使用 ESP-IDF 5.x 的正确 API
       uint16_t count = 0;
-      esp_bt_uuid_t svc_uuid;
-      svc_uuid.len = ESP_UUID_LEN_16;
-      svc_uuid.uuid.uuid16 = SERVICE_UUID;
+      
+      esp_bt_uuid_t svc_uuid = {.len = ESP_UUID_LEN_16, .uuid = {.uuid16 = SERVICE_UUID}};
+      esp_bt_uuid_t tx_uuid = {.len = ESP_UUID_LEN_16, .uuid = {.uuid16 = TX_CHAR_UUID}};
+      esp_bt_uuid_t rx_uuid = {.len = ESP_UUID_LEN_16, .uuid = {.uuid16 = RX_CHAR_UUID}};
 
-      esp_bt_uuid_t tx_uuid;
-      tx_uuid.len = ESP_UUID_LEN_16;
-      tx_uuid.uuid.uuid16 = TX_CHAR_UUID;
+      uint16_t start_handle = 0, end_handle = 0;
+      esp_ble_gattc_get_service(gattc_if, param->search_cmpl.conn_id,
+                                svc_uuid, &start_handle, &end_handle, 0);
 
-      esp_bt_uuid_t rx_uuid;
-      rx_uuid.len = ESP_UUID_LEN_16;
-      rx_uuid.uuid.uuid16 = RX_CHAR_UUID;
-
-      esp_ble_gattc_get_attr_count(gattc_if, param->search_cmpl.conn_id,
-                                   ESP_GATT_DB_PRIMARY_SERVICE,
-                                   svc_uuid, &count);
-
-      if (count > 0) {
-        uint16_t start_handle = 0;
-        uint16_t end_handle = 0;
-
-        // 获取服务句柄范围
-        esp_ble_gattc_get_service(gattc_if, param->search_cmpl.conn_id,
-                                  svc_uuid, &start_handle, &end_handle, 0);
-
-        // 获取 TX 特征句柄
+      if (start_handle > 0) {
         esp_ble_gattc_get_char_by_uuid(gattc_if, param->search_cmpl.conn_id,
                                        start_handle, end_handle,
                                        tx_uuid, &this->tx_handle_, &count);
-
-        // 获取 RX 特征句柄
         esp_ble_gattc_get_char_by_uuid(gattc_if, param->search_cmpl.conn_id,
                                        start_handle, end_handle,
                                        rx_uuid, &this->rx_handle_, &count);
 
-        ESP_LOGI(TAG, "TX handle: %d, RX handle: %d",
-                 this->tx_handle_, this->rx_handle_);
+        ESP_LOGI(TAG, "TX: %d, RX: %d", this->tx_handle_, this->rx_handle_);
         this->enable_notify_();
       }
       break;
@@ -89,7 +90,11 @@ void SunopenMPPT::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t 
     }
 
     case ESP_GATTC_NOTIFY_EVT: {
-      ESP_LOGD(TAG, "Received %d bytes via notify", param->notify.value_len);
+      for (uint16_t i = 0; i < param->notify.value_len; i++) {
+        if (!this->parse_modbus_byte_(param->notify.value[i])) {
+          this->rx_buffer_.clear();
+        }
+      }
       break;
     }
 
@@ -100,27 +105,72 @@ void SunopenMPPT::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t 
 
 void SunopenMPPT::enable_notify_() {
   if (this->rx_handle_ == 0) return;
-  esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(),
-                                    this->parent()->get_remote_bda(),
-                                    this->rx_handle_);
+  esp_ble_gattc_register_for_notify(
+      this->parent()->get_gattc_if(),
+      this->parent()->get_remote_bda(),
+      this->rx_handle_);
 }
 
 void SunopenMPPT::poll_data_() {
-  ESP_LOGD(TAG, "Polling Modbus data");
-  this->write_modbus_command_(std::vector<uint8_t>(CMD1, CMD1 + sizeof(CMD1)));
+  this->write_command(std::vector<uint8_t>(CMD1, CMD1 + sizeof(CMD1)));
   delay(200);
-  this->write_modbus_command_(std::vector<uint8_t>(CMD2, CMD2 + sizeof(CMD2)));
+  this->write_command(std::vector<uint8_t>(CMD2, CMD2 + sizeof(CMD2)));
 }
 
-void SunopenMPPT::write_modbus_command_(const std::vector<uint8_t> &data) {
+void SunopenMPPT::write_command(const std::vector<uint8_t> &data) {
   if (this->tx_handle_ == 0) return;
-  esp_ble_gattc_write_char(this->parent()->get_gattc_if(),
-                          this->parent()->get_conn_id(),
-                          this->tx_handle_,
-                          data.size(),
-                          const_cast<uint8_t*>(data.data()),
-                          ESP_GATT_WRITE_TYPE_NO_RSP,
-                          ESP_GATT_AUTH_REQ_NONE);
+  
+  esp_ble_gattc_write_char(
+      this->parent()->get_gattc_if(),
+      this->parent()->get_conn_id(),
+      this->tx_handle_,
+      data.size(),
+      const_cast<uint8_t*>(data.data()),
+      ESP_GATT_WRITE_TYPE_NO_RSP,
+      ESP_GATT_AUTH_REQ_NONE);
+}
+
+bool SunopenMPPT::parse_modbus_byte_(uint8_t byte) {
+  this->rx_buffer_.push_back(byte);
+  this->last_modbus_byte_ = millis();
+  
+  size_t len = this->rx_buffer_.size();
+  if (len < 5) return true;  // Minimum Modbus frame: addr(1)+func(1)+len(1)+crc(2)
+  
+  uint8_t function = this->rx_buffer_[1];
+  
+  if (function == 0x03) {  // Read Holding Registers
+    uint8_t byte_count = this->rx_buffer_[2];
+    size_t expected_len = 3 + byte_count + 2;  // header + data + crc
+    
+    if (len >= expected_len) {
+      this->process_data_(this->rx_buffer_);
+      return false;  // Reset buffer
+    }
+  }
+  
+  if (len > 256) return false;  // Overflow protection
+  return true;
+}
+
+void SunopenMPPT::process_data_(const std::vector<uint8_t> &data) {
+  // Verify CRC
+  uint16_t computed = crc16(data.data(), data.size() - 2);
+  uint16_t received = (data[data.size() - 1] << 8) | data[data.size() - 2];
+  
+  if (computed != received) {
+    ESP_LOGW(TAG, "CRC mismatch: 0x%04X vs 0x%04X", computed, received);
+    return;
+  }
+  
+  ESP_LOGD(TAG, "Valid Modbus frame: %d bytes", data.size());
+  
+  // Notify all registered devices
+  for (auto *device : this->devices_) {
+    if (device->address_ == data[0]) {
+      device->on_modbus_data(data);
+    }
+  }
 }
 
 }  // namespace sunopen_mppt
