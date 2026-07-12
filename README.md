@@ -1,4 +1,5 @@
 # sunopen_mppt yaml
+--- yaml
 substitutions:
   device_name: sunopen-mppt
   friendly_name: SUNOPEN MPPT 太阳能控制器
@@ -117,3 +118,4 @@ switch:
     on_turn_off:
       - ble_client.disconnect: mppt_ble_client
       - logger.log: "手动断开MPPT蓝牙"
+---
