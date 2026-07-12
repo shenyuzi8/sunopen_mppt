@@ -3,7 +3,6 @@ import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
     CONF_ID,
-    CONF_ADDRESS,
     DEVICE_CLASS_VOLTAGE,
     DEVICE_CLASS_CURRENT,
     DEVICE_CLASS_POWER,
@@ -18,9 +17,19 @@ from esphome.const import (
     UNIT_PERCENT,
     UNIT_WATT_HOURS,
 )
-from . import SunopenMPPTDevice, register_sunopen_mppt_device, sunopen_mppt_device_schema
+from . import (
+    SunopenMPPTDevice,
+    sunopen_mppt_ns,
+    register_sunopen_mppt_device,
+    sunopen_mppt_device_schema,
+)
 
 DEPENDENCIES = ["sunopen_mppt"]
+
+# 关键：在模块级别定义 SunopenMPPTSensor
+SunopenMPPTSensor = sunopen_mppt_ns.class_(
+    "SunopenMPPTSensor", SunopenMPPTDevice, cg.Component
+)
 
 CONF_BATTERY_VOLTAGE = "battery_voltage"
 CONF_BATTERY_CURRENT = "battery_current"
@@ -119,10 +128,6 @@ CONFIG_SCHEMA = cv.All(
         }
     )
     .extend(sunopen_mppt_device_schema())
-)
-
-SunopenMPPTSensor = sunopen_mppt_ns.class_(
-    "SunopenMPPTSensor", SunopenMPPTDevice, cg.Component
 )
 
 
