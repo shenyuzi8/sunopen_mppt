@@ -23,7 +23,6 @@ class SunopenMPPT : public ble_client::BLEClientNode, public Component {
 
   uint16_t tx_handle_{0};
   uint16_t rx_handle_{0};
-  uint16_t service_handle_{0};
   bool ready_{false};
   uint32_t last_poll_{0};
   uint32_t throttle_{5000};
