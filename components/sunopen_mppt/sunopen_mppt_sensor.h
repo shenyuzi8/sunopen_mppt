@@ -2,6 +2,7 @@
 
 #include "sunopen_mppt.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/switch/switch.h"
 
 namespace esphome {
 namespace sunopen_mppt {
@@ -38,6 +39,17 @@ class SunopenMPPTSensor : public SunopenMPPTDevice, public Component {
   sensor::Sensor *controller_temp_sensor_{nullptr};
   sensor::Sensor *today_energy_sensor_{nullptr};
   sensor::Sensor *charging_status_sensor_{nullptr};
+};
+
+class SunopenMPPTSwitch : public SunopenMPPTDevice, public Component, public switch_::Switch {
+ public:
+  void on_modbus_data(const std::vector<uint8_t> &data) override;
+  void write_state(bool state) override;
+
+  void set_load_switch(switch_::Switch *s) { load_switch_ = s; }
+
+ protected:
+  switch_::Switch *load_switch_{nullptr};
 };
 
 }  // namespace sunopen_mppt
