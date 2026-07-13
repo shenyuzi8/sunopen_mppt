@@ -123,6 +123,8 @@ void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
 }
 
 void SunopenMPPTSwitch::write_state(bool state) {
+  ESP_LOGI(TAG, "!!! write_state called: %s !!!", state ? "ON" : "OFF");
+  
   uint8_t value = state ? 0x01 : 0x00;
   
   uint8_t cmd[] = {
@@ -134,8 +136,6 @@ void SunopenMPPTSwitch::write_state(bool state) {
   cmd[7] = crc >> 8;
   
   this->write_command(std::vector<uint8_t>(cmd, cmd + 8));
-  
-  // 立即更新开关状态
   this->publish_state(state);
   
   ESP_LOGI(TAG, "Load switch (0x06 addr=0x9C47): %s", state ? "ON" : "OFF");
