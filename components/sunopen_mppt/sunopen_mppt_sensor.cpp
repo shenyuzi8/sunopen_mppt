@@ -125,11 +125,11 @@ void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
 void SunopenMPPTSwitch::write_state(bool state) {
   uint8_t value = state ? 0x01 : 0x00;
   
-  // 40039 的 Modbus 地址 = 0x0027
+  // 40039 的 PLC 地址 = 0x9C47
   uint8_t cmd[] = {
     0x01,       // 设备地址
     0x06,       // 功能码：写单个寄存器
-    0x00, 0x27, // 寄存器地址 40039 (0x0027)
+    0x9C, 0x47, // 寄存器地址 40039 (PLC 地址 0x9C47)
     0x00, value,// 写入值
     0x00, 0x00  // CRC 占位
   };
@@ -141,7 +141,7 @@ void SunopenMPPTSwitch::write_state(bool state) {
   
   this->write_command(std::vector<uint8_t>(cmd, cmd + 8));
   
-  ESP_LOGI(TAG, "Load switch command sent: %s (addr=0x0027, value=%d)", state ? "ON" : "OFF", value);
+  ESP_LOGI(TAG, "Load switch command sent: %s (addr=0x9C47, value=%d)", state ? "ON" : "OFF", value);
 }
 
 }  // namespace sunopen_mppt
