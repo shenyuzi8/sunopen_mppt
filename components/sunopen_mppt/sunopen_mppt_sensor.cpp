@@ -125,10 +125,15 @@ void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
 void SunopenMPPTSwitch::write_state(bool state) {
   ESP_LOGI(TAG, "!!! write_state called: %s !!!", state ? "ON" : "OFF");
   
-  uint8_t value = state ? 0x01 : 0x00;
+  uint8_t value = state ? 0xFF : 0x00;
   
+  // 线圈地址 = 39 - 1 = 38 = 0x0026
   uint8_t cmd[] = {
-    0x01, 0x06, 0x9C, 0x47, 0x00, value, 0x00, 0x00
+    0x01,       // 设备地址
+    0x05,       // 功能码：写单个线圈
+    0x00, 0x26, // 线圈地址 00039
+    value, 0x00,// 0xFF00=ON, 0x0000=OFF
+    0x00, 0x00  // CRC
   };
   
   uint16_t crc = crc16(cmd, 6);
@@ -138,7 +143,7 @@ void SunopenMPPTSwitch::write_state(bool state) {
   this->write_command(std::vector<uint8_t>(cmd, cmd + 8));
   this->publish_state(state);
   
-  ESP_LOGI(TAG, "Load switch (0x06 addr=0x9C47): %s", state ? "ON" : "OFF");
+  ESP_LOGI(TAG, "Coil write 0x05 addr=0x0026: %s", state ? "ON" : "OFF");
 }
 
 }  // namespace sunopen_mppt
