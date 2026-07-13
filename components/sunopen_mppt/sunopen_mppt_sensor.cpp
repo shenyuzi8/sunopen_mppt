@@ -112,13 +112,13 @@ void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
   const uint8_t *regs = &data[3];
 
   if (byte_count >= 200) {
-    // 40013 (address 13): 当前负载状态 -> offset 26
-    uint16_t val = (regs[26] << 8) | regs[27];
-    ESP_LOGI(TAG, "Load status register 40013 raw value: %d", val);
+    // 40039 (address 39): 远程负载开关 -> offset 78
+    uint16_t val = (regs[78] << 8) | regs[79];
+    ESP_LOGI(TAG, "Load switch register 40039 raw value: %d", val);
     
     bool state = (val == 1);
     this->publish_state(state);
-    ESP_LOGI(TAG, "Load status: %s", state ? "ON" : "OFF");
+    ESP_LOGI(TAG, "Load switch status: %s", state ? "ON" : "OFF");
   }
 }
 
@@ -134,6 +134,9 @@ void SunopenMPPTSwitch::write_state(bool state) {
   cmd[7] = crc >> 8;
   
   this->write_command(std::vector<uint8_t>(cmd, cmd + 8));
+  
+  // 立即更新开关状态
+  this->publish_state(state);
   
   ESP_LOGI(TAG, "Load switch (0x06 addr=0x9C47): %s", state ? "ON" : "OFF");
 }
