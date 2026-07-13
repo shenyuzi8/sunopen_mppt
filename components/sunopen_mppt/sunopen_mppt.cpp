@@ -146,7 +146,7 @@ void SunopenMPPT::write_command(const std::vector<uint8_t> &data) {
       this->tx_handle_,
       data.size(),
       const_cast<uint8_t*>(data.data()),
-      ESP_GATT_WRITE_TYPE_NO_RSP,
+      ESP_GATT_WRITE_TYPE_RSP,
       ESP_GATT_AUTH_REQ_NONE);
 }
 
