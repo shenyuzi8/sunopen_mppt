@@ -1,5 +1,6 @@
 #include "sunopen_mppt_sensor.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace sunopen_mppt {
@@ -7,21 +8,17 @@ namespace sunopen_mppt {
 static const char *const TAG = "sunopen_mppt_sensor";
 
 void SunopenMPPTSensor::on_modbus_data(const std::vector<uint8_t> &data) {
-  // data format: [addr][func][byte_count][reg_data...][crc]
   if (data.size() < 5) {
     ESP_LOGW(TAG, "Data too short: %d bytes", data.size());
     return;
   }
 
   uint8_t byte_count = data[2];
-  const uint8_t *regs = &data[3];  // register data start
+  const uint8_t *regs = &data[3];
 
   ESP_LOGI(TAG, "Processing %d bytes of register data", byte_count);
 
-  // One single read of 100 registers starting from address 0 (40000)
   if (byte_count >= 200) {
-    // Register offset = register_address * 2
-
     // 40020 (address 20): PV input voltage (0.01V)
     if (this->pv_voltage_sensor_ != nullptr) {
       uint16_t val = (regs[40] << 8) | regs[41];
@@ -95,7 +92,7 @@ void SunopenMPPTSensor::on_modbus_data(const std::vector<uint8_t> &data) {
       this->today_energy_sensor_->publish_state(val);
     }
 
-    // 40011 (address 11): Charging status (0 = not charging, 1 = charging)
+    // 40011 (address 11): Charging status
     if (this->charging_status_sensor_ != nullptr) {
       uint16_t val = (regs[22] << 8) | regs[23];
       this->charging_status_sensor_->publish_state(val);
@@ -105,6 +102,46 @@ void SunopenMPPTSensor::on_modbus_data(const std::vector<uint8_t> &data) {
   } else {
     ESP_LOGW(TAG, "Not enough data: byte_count=%d (expected >=200)", byte_count);
   }
+}
+
+// ==================== Switch Implementation ====================
+
+void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
+  if (data.size() < 5) return;
+
+  uint8_t byte_count = data[2];
+  const uint8_t *regs = &data[3];
+
+  if (byte_count >= 200) {
+    // 40039 (address 39): Load switch status -> offset 78
+    uint16_t val = (regs[78] << 8) | regs[79];
+    bool state = (val == 1);
+    
+    this->publish_state(state);
+    ESP_LOGD(TAG, "Load switch status updated: %s", state ? "ON" : "OFF");
+  }
+}
+
+void SunopenMPPTSwitch::write_state(bool state) {
+  uint8_t value = state ? 0x01 : 0x00;
+  
+  // Modbus write single register: 40039 = 0x9C47
+  uint8_t cmd[] = {
+    0x01,       // device address
+    0x06,       // function code: write single register
+    0x9C, 0x47, // register address 40039
+    0x00, value, // value
+    0x00, 0x00  // CRC placeholder
+  };
+  
+  // Calculate CRC16
+  uint16_t crc = crc16(cmd, 6);
+  cmd[6] = crc & 0xFF;
+  cmd[7] = crc >> 8;
+  
+  this->write_command(std::vector<uint8_t>(cmd, cmd + 8));
+  
+  ESP_LOGI(TAG, "Load switch set to: %s", state ? "ON" : "OFF");
 }
 
 }  // namespace sunopen_mppt
