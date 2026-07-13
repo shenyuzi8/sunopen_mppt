@@ -34,6 +34,9 @@ void SunopenMPPT::loop() {
     this->last_modbus_byte_ = now;
   }
 
+  // 写入锁定期间跳过轮询
+  if (now < this->write_lock_until_) return;
+
   if (now - this->last_poll_ >= this->throttle_) {
     this->last_poll_ = now;
     this->poll_data_();
@@ -140,6 +143,11 @@ void SunopenMPPT::poll_data_() {
 
 void SunopenMPPT::write_command(const std::vector<uint8_t> &data) {
   if (this->tx_handle_ == 0) return;
+
+  // 锁定 3 秒不读取
+  this->write_lock_until_ = millis() + 3000;
+  ESP_LOGI(TAG, "Write lock for 3s");
+
   esp_ble_gattc_write_char(
       this->parent()->get_gattc_if(),
       this->parent()->get_conn_id(),
@@ -155,7 +163,7 @@ bool SunopenMPPT::parse_modbus_byte_(uint8_t byte) {
   this->last_modbus_byte_ = millis();
 
   size_t len = this->rx_buffer_.size();
-  if (len < 5) return true;
+  if (len < 3) return true;
 
   uint8_t function = this->rx_buffer_[1];
 
@@ -166,23 +174,21 @@ bool SunopenMPPT::parse_modbus_byte_(uint8_t byte) {
       this->process_data_(this->rx_buffer_);
       return false;
     }
-  } else if (function == 0x05 || function == 0x06) {
+  } else if (function == 0x06) {
     if (len >= 8) {
-      ESP_LOGD(TAG, "Write response received (func=0x%02X)", function);
-      return false;
-    }
-  } else if (function == 0x10) {
-    if (len >= 8) {
-      ESP_LOGD(TAG, "Write multiple response received");
+      ESP_LOGI(TAG, "Write response: %02X %02X %02X %02X %02X %02X %02X %02X",
+               this->rx_buffer_[0], this->rx_buffer_[1], this->rx_buffer_[2], this->rx_buffer_[3],
+               this->rx_buffer_[4], this->rx_buffer_[5], this->rx_buffer_[6], this->rx_buffer_[7]);
       return false;
     }
   } else if (function >= 0x80) {
     if (len >= 5) {
-      ESP_LOGW(TAG, "Modbus exception: func=0x%02X, code=%d", function, this->rx_buffer_[2]);
+      ESP_LOGW(TAG, "Exception: %02X %02X %02X %02X %02X",
+               this->rx_buffer_[0], this->rx_buffer_[1], this->rx_buffer_[2], this->rx_buffer_[3], this->rx_buffer_[4]);
       return false;
     }
   } else {
-    ESP_LOGW(TAG, "Unexpected function code: 0x%02X", function);
+    ESP_LOGW(TAG, "Unknown func 0x%02X: %s", function, format_hex_pretty(this->rx_buffer_.data(), len).c_str());
     return false;
   }
 
