@@ -15,6 +15,8 @@ SunopenMPPTSwitch = sunopen_mppt_ns.class_(
     "SunopenMPPTSwitch", SunopenMPPTDevice, cg.Component, switch.Switch
 )
 
+CONF_LOAD_SWITCH = "load_switch"
+
 CONFIG_SCHEMA = switch.switch_schema(SunopenMPPTSwitch).extend(
     sunopen_mppt_device_schema()
 )
