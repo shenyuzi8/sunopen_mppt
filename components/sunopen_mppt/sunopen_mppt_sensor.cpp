@@ -23,7 +23,6 @@ void SunopenMPPTSensor::on_modbus_data(const std::vector<uint8_t> &data) {
     if (this->pv_voltage_sensor_ != nullptr) {
       uint16_t val = (regs[40] << 8) | regs[41];
       this->pv_voltage_sensor_->publish_state(val * 0.01f);
-      ESP_LOGD(TAG, "PV Voltage: %.2f V", val * 0.01f);
     }
 
     // 40021 (address 21): PV input current (0.01A)
@@ -115,10 +114,11 @@ void SunopenMPPTSwitch::on_modbus_data(const std::vector<uint8_t> &data) {
   if (byte_count >= 200) {
     // 40039 (address 39): Load switch status -> offset 78
     uint16_t val = (regs[78] << 8) | regs[79];
-    bool state = (val == 1);
+    ESP_LOGI(TAG, "Load switch register raw value: %d (0x%04X)", val, val);
     
+    bool state = (val == 1);
     this->publish_state(state);
-    ESP_LOGD(TAG, "Load switch status updated: %s", state ? "ON" : "OFF");
+    ESP_LOGI(TAG, "Load switch status: %s", state ? "ON" : "OFF");
   }
 }
 
