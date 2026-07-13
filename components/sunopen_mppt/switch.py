@@ -15,24 +15,11 @@ SunopenMPPTSwitch = sunopen_mppt_ns.class_(
     "SunopenMPPTSwitch", SunopenMPPTDevice, cg.Component, switch.Switch
 )
 
-CONF_LOAD_SWITCH = "load_switch"
-
-CONFIG_SCHEMA = cv.All(
-    cv.Schema(
-        {
-            cv.GenerateID(): cv.declare_id(SunopenMPPTSwitch),
-            cv.Optional(CONF_LOAD_SWITCH): switch.switch_schema(),
-        }
-    )
-    .extend(sunopen_mppt_device_schema())
+CONFIG_SCHEMA = switch.switch_schema(SunopenMPPTSwitch).extend(
+    sunopen_mppt_device_schema()
 )
 
 async def to_code(config):
-    var = cg.new_Pvariable(config[CONF_ID])
+    var = await switch.new_switch(config)
     await cg.register_component(var, config)
     await register_sunopen_mppt_device(var, config)
-    await switch.register_switch(var, config)
-
-    if CONF_LOAD_SWITCH in config:
-        sw = await switch.new_switch(config[CONF_LOAD_SWITCH])
-        cg.add(var.set_load_switch(sw))
